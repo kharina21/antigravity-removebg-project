@@ -3,6 +3,7 @@ import { Globe, ChevronDown, Sun, Moon } from 'lucide-react';
 import { removeBackground } from '@imgly/background-removal';
 
 import { translations } from './utils/translations';
+import { refineCutout } from './utils/edgeRefiner';
 import UploadView from './components/UploadView';
 import ProcessingView from './components/ProcessingView';
 import EditorWorkspace from './components/EditorWorkspace';
@@ -69,6 +70,7 @@ export default function App() {
       // AI Config pointing to unpkg CDN chunks for fast download in all regions
       const config = {
         debug: true,
+        model: 'large', // Upgrade to maximum edge quality model
         publicPath: "https://unpkg.com/@imgly/background-removal-data@1.4.5/dist/",
         progress: (stage, progressValue) => {
           let text = t('loading_processing');
@@ -93,8 +95,27 @@ export default function App() {
       const resultBlob = await removeBackground(imageBlob, config);
 
       // Load background-removed image
-      const cutImg = await loadImageFromBlob(resultBlob);
-      setCutoutImage(cutImg);
+      const rawCutImg = await loadImageFromBlob(resultBlob);
+      
+      // Post-process with Edge Refinement (Defringe + Feather)
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = rawCutImg.naturalWidth || rawCutImg.width;
+      offscreenCanvas.height = rawCutImg.naturalHeight || rawCutImg.height;
+      const offscreenCtx = offscreenCanvas.getContext('2d');
+      offscreenCtx.drawImage(rawCutImg, 0, 0);
+      
+      refineCutout(offscreenCanvas);
+      
+      // Convert refined canvas back to Image element
+      const refinedDataUrl = offscreenCanvas.toDataURL('image/png');
+      const refinedImg = new Image();
+      await new Promise((resolve, reject) => {
+        refinedImg.onload = resolve;
+        refinedImg.onerror = reject;
+        refinedImg.src = refinedDataUrl;
+      });
+
+      setCutoutImage(refinedImg);
 
       setView('EDITOR');
     } catch (err) {
