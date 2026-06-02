@@ -47,6 +47,9 @@ export const translations = {
         btn_download: "Tải ảnh chất lượng cao",
         err_load: "Không thể tải ảnh. Vui lòng thử lại tệp tin khác.",
         err_process: "Lỗi tách nền ảnh. Vui lòng kiểm tra kết nối mạng và thử lại.",
+        btn_enhance: "Nâng cấp HD",
+        enhancing_loading: "Đang tăng độ rõ nét và làm mịn chi tiết...",
+        enhance_success: "Đã làm nét và nâng cấp chất lượng ảnh HD thành công!",
     },
     en: {
         hero_title: "AI Background Removal in a Flash.",
@@ -96,6 +99,9 @@ export const translations = {
         btn_download: "Download HD Image",
         err_load: "Failed to load image. Please try another file.",
         err_process: "Background removal failed. Please check internet connection and try again.",
+        btn_enhance: "HD Enhance",
+        enhancing_loading: "Improving clarity and sharpening details...",
+        enhance_success: "Image details and quality enhanced to HD successfully!",
     },
     ja: {
         hero_title: "AI背景透過が一瞬で完了。",
@@ -145,5 +151,8 @@ export const translations = {
         btn_download: "高画質で保存",
         err_load: "画像の読み込みに失敗しました。別のファイルを試してください。",
         err_process: "背景の削除に失敗しました。接続を確認し、もう一度お試しください。",
+        btn_enhance: "HD画質向上",
+        enhancing_loading: "輪郭を強調し、画質を最適化中...",
+        enhance_success: "高画質化と鮮明化が完了しました！",
     }
 };

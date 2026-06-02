@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Palette, Crop, Brush, ArrowLeft, Undo2, Redo2, 
-  RotateCcw, RotateCw, FlipHorizontal, Maximize2, Eraser, Download 
+  RotateCcw, RotateCw, FlipHorizontal, Maximize2, Eraser, Download, Sparkles 
 } from 'lucide-react';
 import Cropper from 'cropperjs';
 import { CanvasEditor } from '../utils/canvasEditor';
@@ -60,9 +60,30 @@ export default function EditorWorkspace({
   const [isResizing, setIsResizing] = useState(false);
   const [canvasDataUrl, setCanvasDataUrl] = useState('');
 
+  // HD Enhancer states
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [showEnhanceToast, setShowEnhanceToast] = useState(false);
+
   // Refs
   const canvasRef = useRef(null);
   const canvasEditorRef = useRef(null);
+
+  const handleEnhanceImage = () => {
+    if (!canvasEditorRef.current) return;
+    setIsEnhancing(true);
+    setTimeout(() => {
+      try {
+        canvasEditorRef.current.enhance();
+        setCanvasDataUrl(canvasRef.current.toDataURL());
+        setShowEnhanceToast(true);
+        setTimeout(() => setShowEnhanceToast(false), 3000);
+      } catch (err) {
+        console.error('Enhancement failed:', err);
+      } finally {
+        setIsEnhancing(false);
+      }
+    }, 300);
+  };
   const cropperImgRef = useRef(null);
   const [cropperInstance, setCropperInstance] = useState(null);
   const sliderContainerRef = useRef(null);
@@ -380,26 +401,38 @@ export default function EditorWorkspace({
             <span>{t('btn_back')}</span>
           </button>
           
-          {activeTool === 'brush' && (
-            <div className="flex gap-2">
-              <button 
-                className="btn btn-circle btn-sm btn-ghost border border-base-300" 
-                disabled={!canUndo} 
-                onClick={() => canvasEditorRef.current?.undo()}
-                title="Undo"
-              >
-                <Undo2 className="w-4 h-4" />
-              </button>
-              <button 
-                className="btn btn-circle btn-sm btn-ghost border border-base-300" 
-                disabled={!canRedo} 
-                onClick={() => canvasEditorRef.current?.redo()}
-                title="Redo"
-              >
-                <Redo2 className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+          <div className="flex gap-2 items-center">
+            {/* HD Enhance button */}
+            <button 
+              className="btn btn-sm btn-primary gap-2 normal-case shadow-md text-primary-content hover:scale-105 active:scale-95 transition-all duration-150"
+              onClick={handleEnhanceImage}
+              disabled={isEnhancing}
+            >
+              <Sparkles className="w-4 h-4 text-primary-content" />
+              <span>{t('btn_enhance')}</span>
+            </button>
+
+            {activeTool === 'brush' && (
+              <div className="flex gap-2">
+                <button 
+                  className="btn btn-circle btn-sm btn-ghost border border-base-300" 
+                  disabled={!canUndo} 
+                  onClick={() => canvasEditorRef.current?.undo()}
+                  title="Undo"
+                >
+                  <Undo2 className="w-4 h-4" />
+                </button>
+                <button 
+                  className="btn btn-circle btn-sm btn-ghost border border-base-300" 
+                  disabled={!canRedo} 
+                  onClick={() => canvasEditorRef.current?.redo()}
+                  title="Redo"
+                >
+                  <Redo2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Canvas Working Space */}
@@ -411,6 +444,22 @@ export default function EditorWorkspace({
           onMouseMove={handleCanvasMouseMove}
           onMouseLeave={handleCanvasMouseLeave}
         >
+          {/* HD Enhancement Spinner Overlay */}
+          {isEnhancing && (
+            <div className="absolute inset-0 bg-base-300/70 backdrop-blur-sm z-40 flex flex-col items-center justify-center gap-4 animate-fade-in">
+              <span className="loading loading-spinner loading-lg text-primary"></span>
+              <span className="text-sm font-semibold tracking-wide text-base-content/85">{t('enhancing_loading')}</span>
+            </div>
+          )}
+
+          {/* Success Toast */}
+          {showEnhanceToast && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
+              <div className="alert alert-success shadow-lg border border-success-content/10 py-2.5 px-4 rounded-xl text-xs font-semibold">
+                <span>✨ {t('enhance_success')}</span>
+              </div>
+            </div>
+          )}
           {/* 1. Comparison Slider (active in BG mode) */}
           {activeTool === 'bg' && (
             <div className="comparison-slider-container w-full h-full flex items-center justify-center" ref={sliderContainerRef}>

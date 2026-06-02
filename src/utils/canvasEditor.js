@@ -1,3 +1,5 @@
+import { enhanceImageQuality } from './imageEnhancer';
+
 /**
  * AURA CUT - Advanced Canvas Editor
  * Handles manual brush operations (Erase/Restore) using offscreen masking.
@@ -339,6 +341,17 @@ export class CanvasEditor {
     reset() {
         this.ctx.clearRect(0, 0, this.width, this.height);
         this.ctx.drawImage(this.removedCanvas, 0, 0);
+        this.saveHistoryState();
+    }
+
+    /**
+     * Enhance current canvas image quality (sharpening + color contrast)
+     */
+    enhance() {
+        enhanceImageQuality(this.canvas);
+        // Sync the mask buffer to keep the enhanced quality for subsequent manual brush restorations
+        this.removedCtx.clearRect(0, 0, this.width, this.height);
+        this.removedCtx.drawImage(this.canvas, 0, 0);
         this.saveHistoryState();
     }
 }
