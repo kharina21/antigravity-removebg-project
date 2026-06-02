@@ -1,13 +1,15 @@
 /**
- * Edge Refinement utilities for background removal cutouts.
- * Removes background color fringes (defringe) and smooths out jagged edges (feathering).
- * Fits professional-grade specifications.
+ * Advanced Edge Refinement utilities for background removal cutouts.
+ * Matches professional-grade cutouts (like remove.bg) by removing dark backgrounds,
+ * shadow halos, and pixelated outlines.
  */
 
 /**
- * Refines the boundary edges of a transparent cutout canvas:
- * 1. Edge Decontamination (Defringing): Replaces semi-transparent edge colors with neighboring opaque colors.
- * 2. Alpha Feathering: Smooths the alpha transitions to avoid aliasing and pixelated cuts.
+ * Refines the boundary edges of a transparent cutout canvas using a 4-stage pipeline:
+ * 1. Mask Erosion (1-pixel): Shaves off the outermost pixels which contain background bleed/shadows.
+ * 2. Alpha Threshold Clamping: Eliminates soft semi-transparent halos.
+ * 3. 5x5 Weighted Defringing (Decontamination): Replaces edge colors with nearby solid foreground colors.
+ * 4. Gentle Feathering: Restores smooth anti-aliased outlines.
  */
 export function refineCutout(canvas) {
   const ctx = canvas.getContext('2d');
@@ -19,80 +21,141 @@ export function refineCutout(canvas) {
   const imgData = ctx.getImageData(0, 0, w, h);
   const data = imgData.data;
   
-  // Copy pixels for referencing unchanged states
-  const original = new Uint8ClampedArray(data);
+  // --- STAGE 1: Mask Erosion (1-pixel) ---
+  // Shrinks the alpha mask slightly to shave off the contaminated outer pixels.
+  const originalAlpha = new Uint8ClampedArray(w * h);
+  for (let i = 0; i < data.length; i += 4) {
+    originalAlpha[i / 4] = data[i + 3];
+  }
   
-  // --- STAGE 1: Edge Decontamination (Defringing) ---
-  // Identifies pixels with partial transparency (borders) and overrides their colors
-  // with neighboring solid foreground pixels. This removes original background bleed.
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const idx = (y * w + x) * 4;
-      const alpha = original[idx + 3];
+  const erodedAlpha = new Uint8ClampedArray(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x;
+      const aVal = originalAlpha[idx];
       
-      // Semi-transparent edge range
-      if (alpha > 0 && alpha < 235) {
-        let sumR = 0, sumG = 0, sumB = 0, count = 0;
+      if (aVal > 0) {
+        let minAlpha = aVal;
+        const minY = Math.max(0, y - 1);
+        const maxY = Math.min(h - 1, y + 1);
+        const minX = Math.max(0, x - 1);
+        const maxX = Math.min(w - 1, x + 1);
         
-        // Check 3x3 opaque neighbors
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const nIdx = ((y + dy) * w + (x + dx)) * 4;
-            const nAlpha = original[nIdx + 3];
+        for (let ny = minY; ny <= maxY; ny++) {
+          for (let nx = minX; nx <= maxX; nx++) {
+            const val = originalAlpha[ny * w + nx];
+            if (val < minAlpha) {
+              minAlpha = val;
+            }
+          }
+        }
+        erodedAlpha[idx] = minAlpha;
+      } else {
+        erodedAlpha[idx] = 0;
+      }
+    }
+  }
+  
+  // Write eroded alpha back
+  for (let i = 0; i < data.length; i += 4) {
+    data[i + 3] = erodedAlpha[i / 4];
+  }
+  
+  // --- STAGE 2: Alpha Threshold Clamping & Cleaning ---
+  // Discards faint pixels/shadows and solidifies the core subject.
+  const lowThreshold = 35;   // Below this is cut off (background shadows)
+  const highThreshold = 230;  // Above this is solid foreground
+  
+  for (let i = 0; i < data.length; i += 4) {
+    let alpha = data[i + 3];
+    if (alpha < lowThreshold) {
+      data[i + 3] = 0;
+    } else if (alpha > highThreshold) {
+      data[i + 3] = 255;
+    } else {
+      // Scale intermediate alpha values
+      data[i + 3] = Math.round(((alpha - lowThreshold) / (highThreshold - lowThreshold)) * 255);
+    }
+  }
+  
+  // --- STAGE 3: Advanced Edge Decontamination (Defringing) ---
+  // Replaces edge colors with colors of nearby solid foreground pixels.
+  // Uses a 5x5 window (radius = 2) weighted by distance to cover wider halos.
+  const workingCopy = new Uint8ClampedArray(data);
+  const radius = 2;
+  
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = (y * w + x) * 4;
+      const alpha = workingCopy[idx + 3];
+      
+      // Process semi-transparent boundary pixels
+      if (alpha > 0 && alpha < 255) {
+        let sumR = 0, sumG = 0, sumB = 0;
+        let totalWeight = 0;
+        
+        const minY = Math.max(0, y - radius);
+        const maxY = Math.min(h - 1, y + radius);
+        const minX = Math.max(0, x - radius);
+        const maxX = Math.min(w - 1, x + radius);
+        
+        for (let ny = minY; ny <= maxY; ny++) {
+          for (let nx = minX; nx <= maxX; nx++) {
+            const nIdx = (ny * w + nx) * 4;
+            const nAlpha = workingCopy[nIdx + 3];
             
-            // Neighbor is mostly solid foreground
-            if (nAlpha >= 235) {
-              sumR += original[nIdx];
-              sumG += original[nIdx + 1];
-              sumB += original[nIdx + 2];
-              count++;
+            // Pull color from solid foreground pixels
+            if (nAlpha >= 240) {
+              const dx = nx - x;
+              const dy = ny - y;
+              const dist = Math.sqrt(dx * dx + dy * dy) || 0.5;
+              const weight = 1.0 / dist;
+              
+              sumR += workingCopy[nIdx] * weight;
+              sumG += workingCopy[nIdx + 1] * weight;
+              sumB += workingCopy[nIdx + 2] * weight;
+              totalWeight += weight;
             }
           }
         }
         
-        if (count > 0) {
-          data[idx] = sumR / count;
-          data[idx + 1] = sumG / count;
-          data[idx + 2] = sumB / count;
+        if (totalWeight > 0) {
+          data[idx] = Math.round(sumR / totalWeight);
+          data[idx + 1] = Math.round(sumG / totalWeight);
+          data[idx + 2] = Math.round(sumB / totalWeight);
         }
       }
     }
   }
   
-  // --- STAGE 2: Alpha Channel Feathering (Anti-Aliasing Blur) ---
-  // Smooths out the alpha mask transitions to eliminate pixelation and jagged borders.
-  const tempAlpha = new Uint8ClampedArray(w * h);
+  // --- STAGE 4: Smooth Alpha Feathering (Anti-Aliasing Blur) ---
+  // Box blur the final alpha channel of edge pixels to restore natural smoothness.
+  const postDeconAlpha = new Uint8ClampedArray(w * h);
   for (let i = 0; i < data.length; i += 4) {
-    tempAlpha[i / 4] = data[i + 3];
+    postDeconAlpha[i / 4] = data[i + 3];
   }
   
-  const smoothedAlpha = new Uint8ClampedArray(w * h);
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
       const idx = y * w + x;
-      const aVal = tempAlpha[idx];
+      const aVal = postDeconAlpha[idx];
       
-      // Apply box blur ONLY to transitional pixels (the edges) to preserve sharp center mask boundaries
       if (aVal > 0 && aVal < 255) {
         let sum = 0, count = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            sum += tempAlpha[idx + dy * w + dx];
+        
+        const minY = Math.max(0, y - 1);
+        const maxY = Math.min(h - 1, y + 1);
+        const minX = Math.max(0, x - 1);
+        const maxX = Math.min(w - 1, x + 1);
+        
+        for (let ny = minY; ny <= maxY; ny++) {
+          for (let nx = minX; nx <= maxX; nx++) {
+            sum += postDeconAlpha[ny * w + nx];
             count++;
           }
         }
-        smoothedAlpha[idx] = sum / count;
-      } else {
-        smoothedAlpha[idx] = aVal;
+        data[idx * 4 + 3] = Math.round(sum / count);
       }
-    }
-  }
-  
-  // Write back the smoothed alpha mask to the image data
-  for (let i = 0; i < data.length; i += 4) {
-    const idx = i / 4;
-    if (tempAlpha[idx] > 0 && tempAlpha[idx] < 255) {
-      data[i + 3] = smoothedAlpha[idx];
     }
   }
   
