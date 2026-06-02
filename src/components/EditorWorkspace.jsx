@@ -67,6 +67,7 @@ export default function EditorWorkspace({
   // Refs
   const canvasRef = useRef(null);
   const canvasEditorRef = useRef(null);
+  const hasInitializedRef = useRef(false);
 
   const handleEnhanceImage = () => {
     if (!canvasEditorRef.current) return;
@@ -116,11 +117,12 @@ export default function EditorWorkspace({
     };
   }, []);
 
-  // 2. Load images into CanvasEditor
+  // 2. Load images into CanvasEditor (only runs once on initial load)
   useEffect(() => {
-    if (canvasEditorRef.current && originalImage && cutoutImage) {
+    if (canvasEditorRef.current && originalImage && cutoutImage && !hasInitializedRef.current) {
       canvasEditorRef.current.init(originalImage, cutoutImage);
       setCanvasDataUrl(canvasRef.current.toDataURL());
+      hasInitializedRef.current = true;
     }
   }, [originalImage, cutoutImage]);
 
@@ -273,15 +275,42 @@ export default function EditorWorkspace({
     const croppedRemoved = cropCanvasHelper(canvasEditorRef.current.removedCanvas);
     const croppedEdited = cropCanvasHelper(canvasEditorRef.current.canvas);
 
-    setOriginalImage(croppedOriginal);
-    setCutoutImage(croppedRemoved);
+    // Convert canvases to loaded HTMLImageElement objects to avoid breaking components
+    const loadImg = (canvas) => {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = canvas.toDataURL('image/png');
+      });
+    };
 
-    canvasEditorRef.current.init(croppedOriginal, croppedRemoved);
-    canvasEditorRef.current.ctx.clearRect(0, 0, canvasEditorRef.current.width, canvasEditorRef.current.height);
-    canvasEditorRef.current.ctx.drawImage(croppedEdited, 0, 0);
-    canvasEditorRef.current.saveHistoryState();
-
-    setActiveTool('bg');
+    Promise.all([
+      loadImg(croppedOriginal),
+      loadImg(croppedRemoved),
+      loadImg(croppedEdited)
+    ])
+      .then(([origImg, cutImg, editImg]) => {
+        // Re-initialize the editor with the new cropped images
+        canvasEditorRef.current.init(origImg, cutImg);
+        
+        // Draw the cropped edited content back on top of the main canvas
+        canvasEditorRef.current.ctx.clearRect(0, 0, canvasEditorRef.current.width, canvasEditorRef.current.height);
+        canvasEditorRef.current.ctx.drawImage(editImg, 0, 0);
+        
+        // Save the history state
+        canvasEditorRef.current.saveHistoryState();
+        
+        // Update states
+        setOriginalImage(origImg);
+        setCutoutImage(cutImg);
+        setCanvasDataUrl(canvasEditorRef.current.canvas.toDataURL());
+        
+        setActiveTool('bg');
+      })
+      .catch((err) => {
+        console.error('Error applying crop:', err);
+      });
   };
 
   // 8. Download / Export logic

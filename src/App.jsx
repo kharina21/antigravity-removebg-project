@@ -70,7 +70,7 @@ export default function App() {
       // AI Config pointing to unpkg CDN chunks for fast download in all regions
       const config = {
         debug: true,
-        model: 'large', // Upgrade to maximum edge quality model
+        model: 'medium', // Use default medium model to fix ZodError in v1.4.5
         publicPath: "https://unpkg.com/@imgly/background-removal-data@1.4.5/dist/",
         progress: (stage, progressValue) => {
           let text = t('loading_processing');
